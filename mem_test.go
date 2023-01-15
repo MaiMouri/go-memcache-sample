@@ -1,12 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-
+	"github.com/coocood/freecache"
 	ristretto "github.com/dgraph-io/ristretto"
 	goCache "github.com/patrickmn/go-cache"
 	rainycape "github.com/rainycape/memcache"
@@ -42,8 +41,7 @@ func BenchmarkMemLib3(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		mc.Set("test_key3", "test value3", goCache.DefaultExpiration)
-		it, _ := mc.Get("test_key3")
-		fmt.Println(it)
+		mc.Get("test_key3")
 	}
 }
 
@@ -62,5 +60,20 @@ func BenchmarkMemLib4(b *testing.B) {
 		time.Sleep(1 * time.Millisecond)
 		// mc.Set("test_key3", "test value3", goCache.DefaultExpiration)
 		mc.Get("test_key4")
+	}
+}
+
+func BenchmarkMemLib5(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	expire := 60
+	cacheSize := 100 * 1024 * 1024
+	mc := freecache.NewCache(cacheSize)
+
+	for i := 0; i < b.N; i++ {
+		// 1 → Cost
+		mc.Set([]byte("test_key5"), []byte("test value5"), expire)
+
+		mc.Get([]byte("test_key5"))
 	}
 }
