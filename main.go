@@ -7,10 +7,16 @@ import (
 	// "github.com/rainycape/memcache"
 	"github.com/dgraph-io/ristretto"
 	_ "github.com/dgraph-io/ristretto"
+	"github.com/jinzhu/gorm"
 	_ "github.com/patrickmn/go-cache"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jinzhu/gorm/dialects/mysql"
 )
 
 func main() {
+	dbInit()
+	MemberCountForceCache()
 	/* ristretto */
 	mc, err := ristretto.NewCache(&ristretto.Config{
 		NumCounters: 1e7,
@@ -41,4 +47,23 @@ func main() {
 	// mc.Set("test_key3", "test value3", goCache.DefaultExpiration)
 	// it, err := mc.Get("test_key3")
 	// fmt.Println(it, err)
+}
+
+type Member struct {
+	gorm.Model
+	Gender int `gorm:"column:gender"`
+	Status int `gorm:"column:status"`
+}
+
+func dbInit() {
+	fmt.Println("Start dbInit")
+	db, err := gorm.Open("mysql", "root:@tcp(127.0.0.1:3306)/yb_test?charset=utf8&parseTime=True&loc=Local")
+	if err != nil {
+		panic(err)
+	}
+
+	var members []Member
+	db.Find(&members)
+	fmt.Println(members)
+
 }
