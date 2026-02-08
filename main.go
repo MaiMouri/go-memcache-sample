@@ -1,9 +1,9 @@
 package main
 
-import (
-	"fmt"
-)
+import "fmt"
 
 func main() {
-	fmt.Println("Hello World")
+	fmt.Println("Go Cache Library Comparison")
+	fmt.Println("Run benchmarks: go test -bench=. -benchmem ./...")
+	fmt.Println("See README.md for details.")
 }
