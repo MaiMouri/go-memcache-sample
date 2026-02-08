@@ -1,17 +1,29 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
+	"io"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/allegro/bigcache/v3"
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/coocood/freecache"
 	"github.com/dgraph-io/ristretto"
 	goCache "github.com/patrickmn/go-cache"
 	rainycape "github.com/rainycape/memcache"
 )
+
+// bigcache用のサイレント設定を生成するヘルパー
+func newBigcacheConfig() bigcache.Config {
+	cfg := bigcache.DefaultConfig(10 * time.Minute)
+	cfg.Verbose = false
+	cfg.Logger = log.New(io.Discard, "", 0)
+	return cfg
+}
 
 // memcachedが起動しているか確認するヘルパー
 func isMemcachedAvailable() bool {
@@ -125,6 +137,20 @@ func BenchmarkFreecache(b *testing.B) {
 	}
 }
 
+// BenchmarkBigcache - allegro/bigcache
+func BenchmarkBigcache(b *testing.B) {
+	mc, err := bigcache.New(context.Background(), newBigcacheConfig())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mc.Set("bench_key", []byte("bench_value"))
+		mc.Get("bench_key")
+	}
+}
+
 // =============================================================================
 // 並行アクセスベンチマーク (インメモリキャッシュのみ)
 // =============================================================================
@@ -157,6 +183,22 @@ func BenchmarkRistrettoParallel(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			mc.Set("bench_key", "bench_value", 1)
+			mc.Get("bench_key")
+		}
+	})
+}
+
+// BenchmarkBigcacheParallel - bigcacheの並行Set/Get
+func BenchmarkBigcacheParallel(b *testing.B) {
+	mc, err := bigcache.New(context.Background(), newBigcacheConfig())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			mc.Set("bench_key", []byte("bench_value"))
 			mc.Get("bench_key")
 		}
 	})
@@ -208,6 +250,21 @@ func BenchmarkRistrettoManyKeys(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key := fmt.Sprintf("key:%d", i)
 		mc.Set(key, "bench_value", 1)
+		mc.Get(key)
+	}
+}
+
+// BenchmarkBigcacheManyKeys - bigcacheでユニークキーのSet/Get
+func BenchmarkBigcacheManyKeys(b *testing.B) {
+	mc, err := bigcache.New(context.Background(), newBigcacheConfig())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		key := fmt.Sprintf("key:%d", i)
+		mc.Set(key, []byte("bench_value"))
 		mc.Get(key)
 	}
 }

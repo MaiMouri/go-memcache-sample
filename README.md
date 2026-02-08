@@ -11,6 +11,7 @@ Goで利用可能なキャッシュライブラリの比較リポジトリ。
 | 3 | go-cache | `github.com/patrickmn/go-cache` | インメモリ | - |
 | 4 | ristretto | `github.com/dgraph-io/ristretto` | インメモリ | - |
 | 5 | freecache | `github.com/coocood/freecache` | インメモリ | - |
+| 6 | bigcache | `github.com/allegro/bigcache` | インメモリ | - |
 
 ## 特徴比較
 
@@ -28,18 +29,18 @@ Goで利用可能なキャッシュライブラリの比較リポジトリ。
 
 ### インメモリキャッシュ
 
-| 特徴 | go-cache | ristretto | freecache |
-|------|----------|-----------|-----------|
-| 外部サーバー | 不要 | 不要 | 不要 |
-| 値の型 | `interface{}` (任意の型) | `interface{}` (任意の型) | `[]byte` |
-| TTL | あり (`time.Duration`指定) | あり (`SetWithTTL`) | あり (秒単位) |
-| エビクションポリシー | TTLベース | TinyLFU (アドミッション + SampledLFU) | LRUベース |
-| メモリ上限指定 | なし | あり (MaxCost) | あり (初期化時にサイズ指定) |
-| GCへの影響 | 大 (mapベース) | 中 | ゼロ (ポインタ不使用) |
-| 並行安全性 | あり (sync.RWMutex) | あり (ロックフリー設計) | あり (セグメントロック) |
-| Setの即時反映 | 即時 | 非同期 (バッファ経由) | 即時 |
-| メトリクス | なし | あり (Hits/Misses) | あり (HitRate/EntryCount) |
-| 適したユースケース | シンプルなキャッシュ、小〜中規模 | 高スループット、大規模、ヒット率最適化 | 大量エントリ、GC回避が必要な環境 |
+| 特徴 | go-cache | ristretto | freecache | bigcache |
+|------|----------|-----------|-----------|----------|
+| 外部サーバー | 不要 | 不要 | 不要 | 不要 |
+| 値の型 | `interface{}` (任意の型) | `interface{}` (任意の型) | `[]byte` | `[]byte` |
+| TTL | あり (`time.Duration`指定) | あり (`SetWithTTL`) | あり (秒単位) | あり (グローバル`LifeWindow`) |
+| エビクションポリシー | TTLベース | TinyLFU (アドミッション + SampledLFU) | LRUベース | FIFO (シャード内) |
+| メモリ上限指定 | なし | あり (MaxCost) | あり (初期化時にサイズ指定) | あり (HardMaxCacheSize) |
+| GCへの影響 | 大 (mapベース) | 中 | ゼロ (ポインタ不使用) | 最小 (シャード+バイトスライス) |
+| 並行安全性 | あり (sync.RWMutex) | あり (ロックフリー設計) | あり (セグメントロック) | あり (シャードロック) |
+| Setの即時反映 | 即時 | 非同期 (バッファ経由) | 即時 | 即時 |
+| メトリクス | なし | あり (Hits/Misses) | あり (HitRate/EntryCount) | あり (Len/Capacity/Stats) |
+| 適したユースケース | シンプルなキャッシュ、小〜中規模 | 高スループット、大規模、ヒット率最適化 | 大量エントリ、GC回避が必要な環境 | 大量エントリ、高並行、GC軽減 |
 
 ## 選定ガイド
 
@@ -53,6 +54,7 @@ Goで利用可能なキャッシュライブラリの比較リポジトリ。
 - **go-cache**: シンプルなAPIで導入が容易。小〜中規模のキャッシュに最適。任意のGoの型をそのまま格納できる。
 - **ristretto**: 高スループットが必要な場合。TinyLFUによりキャッシュヒット率が高い。ただしSetが非同期のため即時反映が必要な場合は注意。
 - **freecache**: 大量のキャッシュエントリがある環境でGCの影響を最小化したい場合。値は`[]byte`のみのためシリアライズが必要。
+- **bigcache**: 大量エントリ・高並行アクセスでGCの影響を抑えたい場合。シャードベースで並行性能が高い。値は`[]byte`のみ。TTLはグローバル設定のみ（キーごとの個別TTLは不可）。
 
 ## ディレクトリ構成
 
@@ -65,7 +67,8 @@ Goで利用可能なキャッシュライブラリの比較リポジトリ。
 │   ├── rainycape/main.go              # rainycape使用例
 │   ├── gocache/main.go                # go-cache使用例
 │   ├── ristretto/main.go              # ristretto使用例
-│   └── freecache/main.go              # freecache使用例
+│   ├── freecache/main.go              # freecache使用例
+│   └── bigcache/main.go               # bigcache使用例
 ├── go.mod
 ├── go.sum
 └── main.go
@@ -76,7 +79,7 @@ Goで利用可能なキャッシュライブラリの比較リポジトリ。
 ### インメモリキャッシュのみ (memcached不要)
 
 ```bash
-go test -bench='GoCache|Ristretto|Freecache' -benchmem -count=3
+go test -bench='GoCache|Ristretto|Freecache|Bigcache' -benchmem -count=3
 ```
 
 ### 全ライブラリ (memcachedサーバーが必要)
@@ -99,11 +102,14 @@ go test -bench=. -benchmem -count=3
 | `BenchmarkRistretto` | ristretto Set+Get (非同期) |
 | `BenchmarkRistrettoWithWait` | ristretto Set+Get (反映待ちあり) |
 | `BenchmarkFreecache` | freecache Set+Get |
+| `BenchmarkBigcache` | bigcache Set+Get |
 | `BenchmarkGoCacheParallel` | go-cache 並行Set+Get |
 | `BenchmarkRistrettoParallel` | ristretto 並行Set+Get |
+| `BenchmarkBigcacheParallel` | bigcache 並行Set+Get |
 | `BenchmarkFreecacheParallel` | freecache 並行Set+Get |
 | `BenchmarkGoCacheManyKeys` | go-cache ユニークキーSet+Get |
 | `BenchmarkRistrettoManyKeys` | ristretto ユニークキーSet+Get |
+| `BenchmarkBigcacheManyKeys` | bigcache ユニークキーSet+Get |
 | `BenchmarkFreecacheManyKeys` | freecache ユニークキーSet+Get |
 
 ## 各ライブラリの詳細
@@ -166,3 +172,20 @@ val, err := cache.Get([]byte("foo"))
 ```
 
 **注意**: キーと値は`[]byte`のみ。構造体等を格納するにはシリアライズ (JSON, gob等) が必要。
+
+### 6. bigcache (`allegro/bigcache`)
+
+Allegro社製の高速インメモリキャッシュ。シャードベースの設計でGCの影響を最小化。HTTP APIレスポンスのキャッシュ等、大量エントリの高並行処理に最適。
+
+```go
+cache, _ := bigcache.New(context.Background(), bigcache.Config{
+    Shards:         1024,
+    LifeWindow:     10 * time.Minute,
+    CleanWindow:    5 * time.Minute,
+    HardMaxCacheSize: 256, // MB
+})
+cache.Set("foo", []byte("bar"))
+val, err := cache.Get("foo")
+```
+
+**注意**: TTLは`LifeWindow`でグローバルに設定。キーごとの個別TTL設定は不可。値は`[]byte`のみ。
